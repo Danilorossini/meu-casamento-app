@@ -6,21 +6,25 @@ import Home from './pages/Home';
 import Cadastro from './pages/Cadastro';
 import Login from './pages/Login';
 import RotaProtegida from './components/RotaProtegida';
+import PublicRSVP from './pages/PublicRSVP'; // 1. Importamos a nova página
 
-// Importando o NOVO layout do painel e as sub-páginas com os nomes corretos
+// Importando o layout do painel e as sub-páginas
 import PainelLayout from './pages/PainelLayout';
 import InformacoesGerais from './pages/InformacoesGerais';
 import ListaDePresentes from './pages/ListaDePresentes';
+import RSVP from './pages/RSVP';
 
 function App() {
   return (
     <Router>
       <Routes>
+        {/* --- ROTAS PÚBLICAS --- */}
         <Route path="/" element={<Home />} />
         <Route path="/cadastro" element={<Cadastro />} />
         <Route path="/login" element={<Login />} />
-        
-        {/* Rota principal do Painel, protegida e usando o novo Layout */}
+        <Route path="/rsvp" element={<PublicRSVP />} /> {/* 2. Adicionamos a nova rota pública */}
+
+        {/* --- ROTA PRIVADA DO PAINEL --- */}
         <Route 
           path="/painel" 
           element={
@@ -29,10 +33,10 @@ function App() {
             </RotaProtegida>
           } 
         >
-          {/* Rotas "filhas" do painel. Elas serão renderizadas dentro do <Outlet /> */}
           <Route index element={<Navigate to="info" replace />} />
           <Route path="info" element={<InformacoesGerais />} />
           <Route path="presentes" element={<ListaDePresentes />} />
+          <Route path="rsvp" element={<RSVP />} />
         </Route>
 
       </Routes>

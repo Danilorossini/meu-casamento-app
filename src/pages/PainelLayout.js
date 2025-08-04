@@ -35,9 +35,9 @@ function PainelLayout() {
       </header>
 
       <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
-        <div className="flex gap-8">
+        <div className="flex flex-col md:flex-row gap-8">
           {/* Menu de Navegação Lateral */}
-          <aside className="w-1/4">
+          <aside className="w-full md:w-1/4">
             <nav className="space-y-1">
               <NavLink 
                 to="/painel/info"
@@ -51,13 +51,19 @@ function PainelLayout() {
               >
                 Lista de Presentes
               </NavLink>
-              {/* Futuramente, adicione aqui os links para RSVP, Convite, etc. */}
+              <NavLink 
+                to="/painel/rsvp"
+                className={({ isActive }) => isActive ? "bg-pink-100 text-pink-700 block rounded-md px-3 py-2 text-base font-medium" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 block rounded-md px-3 py-2 text-base font-medium"}
+              >
+                RSVP
+              </NavLink>
+              {/* Futuramente, adicione aqui os links para Convite, etc. */}
             </nav>
           </aside>
 
           {/* Área de Conteúdo Principal */}
-          <div className="w-3/4">
-            {/* O Outlet é o espaço onde as sub-páginas (Info, Presentes) serão renderizadas */}
+          <div className="w-full md:w-3/4">
+            {/* O Outlet é o espaço onde as sub-páginas (Info, Presentes, RSVP) serão renderizadas */}
             <Outlet />
           </div>
         </div>
