@@ -1,12 +1,16 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
-// Importando nossas páginas e o novo componente de proteção
+// Importando componentes e páginas
 import Home from './pages/Home';
 import Cadastro from './pages/Cadastro';
 import Login from './pages/Login';
-import Painel from './pages/Painel';
-import RotaProtegida from './components/RotaProtegida'; // 1. Importamos o segurança
+import RotaProtegida from './components/RotaProtegida';
+
+// Importando o NOVO layout do painel e as sub-páginas com os nomes corretos
+import PainelLayout from './pages/PainelLayout';
+import InformacoesGerais from './pages/InformacoesGerais';
+import ListaDePresentes from './pages/ListaDePresentes';
 
 function App() {
   return (
@@ -15,16 +19,22 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/cadastro" element={<Cadastro />} />
         <Route path="/login" element={<Login />} />
-
-        {/* 2. Envolvemos a rota do Painel com o nosso segurança */}
+        
+        {/* Rota principal do Painel, protegida e usando o novo Layout */}
         <Route 
           path="/painel" 
           element={
             <RotaProtegida>
-              <Painel />
+              <PainelLayout />
             </RotaProtegida>
           } 
-        />
+        >
+          {/* Rotas "filhas" do painel. Elas serão renderizadas dentro do <Outlet /> */}
+          <Route index element={<Navigate to="info" replace />} />
+          <Route path="info" element={<InformacoesGerais />} />
+          <Route path="presentes" element={<ListaDePresentes />} />
+        </Route>
+
       </Routes>
     </Router>
   );
