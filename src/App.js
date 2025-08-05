@@ -8,6 +8,8 @@ import PublicRSVP from './pages/PublicRSVP';
 import RotaProtegida from './components/RotaProtegida';
 import SiteCasamento from './pages/SiteCasamento';
 import PublicPresentes from './pages/PublicPresentes';
+import Convite from './pages/Convite';
+import PublicConvite from './pages/PublicConvite';
 
 import PainelLayout from './pages/PainelLayout';
 import InformacoesGerais from './pages/InformacoesGerais';
@@ -25,6 +27,7 @@ function App() {
         <Route path="/rsvp" element={<PublicRSVP />} />
         <Route path="/casamento/:userId" element={<SiteCasamento />} />
         <Route path="/presentes/:userId" element={<PublicPresentes />} />
+        <Route path="/convite/:userId" element={<PublicConvite />} />
         
         {/* --- ROTA PRIVADA DO PAINEL --- */}
         <Route 
@@ -39,6 +42,7 @@ function App() {
           <Route path="info" element={<InformacoesGerais />} />
           <Route path="presentes" element={<ListaDePresentes />} />
           <Route path="rsvp" element={<RSVP />} />
+          <Route path="convite" element={<Convite />} />
         </Route>
 
       </Routes>

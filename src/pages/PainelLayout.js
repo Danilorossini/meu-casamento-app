@@ -57,13 +57,17 @@ function PainelLayout() {
               >
                 RSVP
               </NavLink>
-              {/* Futuramente, adicione aqui os links para Convite, etc. */}
+              <NavLink 
+                to="/painel/convite"
+                className={({ isActive }) => isActive ? "bg-pink-100 text-pink-700 block rounded-md px-3 py-2 text-base font-medium" : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 block rounded-md px-3 py-2 text-base font-medium"}
+              >
+                Convite Digital
+              </NavLink>
             </nav>
           </aside>
 
           {/* Área de Conteúdo Principal */}
           <div className="w-full md:w-3/4">
-            {/* O Outlet é o espaço onde as sub-páginas (Info, Presentes, RSVP) serão renderizadas */}
             <Outlet />
           </div>
         </div>
