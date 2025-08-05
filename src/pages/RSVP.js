@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useAuthState } from 'react-firebase-hooks/auth';
 import { getAuth } from 'firebase/auth';
 import app from '../firebase';
-import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, updateDoc } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc, query, orderBy, getDoc } from 'firebase/firestore';
 import EditConvidadoModal from '../components/EditConvidadoModal';
 import ConfirmacaoModal from '../components/ConfirmacaoModal';
-import { CSVLink } from "react-csv";
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
@@ -15,6 +14,7 @@ const db = getFirestore(app);
 function RSVP() {
   const [user] = useAuthState(auth);
   const [convidados, setConvidados] = useState([]);
+  const [nomesNoivos, setNomesNoivos] = useState({ noivo: '', noiva: '' });
   const [nomeFamilia, setNomeFamilia] = useState('');
   const [codigoAcesso, setCodigoAcesso] = useState('');
   const [integrantesAdultos, setIntegrantesAdultos] = useState('');
@@ -25,8 +25,14 @@ function RSVP() {
   const [totalConfirmados, setTotalConfirmados] = useState(0);
   const [familiaParaEditar, setFamiliaParaEditar] = useState(null);
   const [familiaParaConfirmar, setFamiliaParaConfirmar] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(5);
+  const [viewMode, setViewMode] = useState('familia');
 
   const fetchConvidados = async (uid) => {
+    const userDocRef = doc(db, 'users', uid);
+    const userDocSnap = await getDoc(userDocRef);
+    if (userDocSnap.exists()) { setNomesNoivos({ noivo: userDocSnap.data().nomeNoivo || '', noiva: userDocSnap.data().nomeNoiva || '' }); }
     const convidadosColRef = collection(db, 'users', uid, 'convidados');
     const q = query(convidadosColRef, orderBy('nomeFamilia', 'asc'));
     const querySnapshot = await getDocs(q);
@@ -65,62 +71,72 @@ function RSVP() {
       fetchConvidados(user.uid);
     }
   };
-  const getExcelData = () => {
-    const data = [];
-    convidados.forEach(familia => {
-      familia.integrantes.forEach(integrante => {
-        data.push({ Familia: familia.nomeFamilia, Integrante: integrante.nome, Tipo: integrante.tipo, Status: integrante.status, Codigo: familia.codigo });
-      });
-    });
-    return data;
-  };
-
-  // --- FUNÇÃO DE PDF ATUALIZADA ---
   const handlePdfConfirmados = () => {
     const confirmados = [];
     convidados.forEach(familia => {
       familia.integrantes.forEach(integrante => {
         if (integrante.status === 'Confirmado') {
-          // 1. Agora salvamos o nome E o tipo
-          confirmados.push({ 
-            nome: integrante.nome,
-            tipo: integrante.tipo.charAt(0).toUpperCase() + integrante.tipo.slice(1) // Deixa a primeira letra maiúscula (ex: "Adulto")
-          });
+          confirmados.push({ nome: integrante.nome, tipo: integrante.tipo.charAt(0).toUpperCase() + integrante.tipo.slice(1) });
         }
       });
     });
-    
     const sortedConfirmados = confirmados.sort((a, b) => a.nome.localeCompare(b.nome));
-
-    const doc = new jsPDF();
-    doc.text("Lista de Convidados Confirmados", 14, 15);
-
-    autoTable(doc, {
-      startY: 20,
-      // 2. Adicionamos a nova coluna no cabeçalho
-      head: [['Nome Completo do Convidado', 'Tipo']],
-      // 3. Adicionamos o novo dado no corpo da tabela
-      body: sortedConfirmados.map(c => [c.nome, c.tipo]),
-      theme: 'striped',
-      headStyles: { fillColor: [231, 76, 60] }
+    const docPDF = new jsPDF();
+    docPDF.text("Lista de Convidados Confirmados", 14, 15);
+    autoTable(docPDF, { startY: 20, head: [['Nome Completo do Convidado', 'Tipo']], body: sortedConfirmados.map(c => [c.nome, c.tipo]), theme: 'striped', headStyles: { fillColor: [225, 102, 126] } });
+    docPDF.save('convidados-confirmados.pdf');
+  };
+  const handlePdfPorFamilia = () => {
+    const docPDF = new jsPDF();
+    const noivo = nomesNoivos.noivo || 'Noivo';
+    const noiva = nomesNoivos.noiva || 'Noiva';
+    docPDF.text(`Lista de Convidados - Casamento ${noivo} & ${noiva}`, 14, 15);
+    let finalY = 25;
+    convidados.forEach(familia => {
+      if (finalY > 260) { docPDF.addPage(); finalY = 15; }
+      docPDF.setFontSize(14);
+      docPDF.text(familia.nomeFamilia, 14, finalY);
+      finalY += 2;
+      const bodyData = familia.integrantes.map(p => [p.nome, p.tipo.charAt(0).toUpperCase() + p.tipo.slice(1), p.status]);
+      autoTable(docPDF, { startY: finalY, head: [['Convidado', 'Tipo', 'Status']], body: bodyData, theme: 'grid', headStyles: { fillColor: [236, 137, 157] } });
+      finalY = docPDF.lastAutoTable.finalY + 15;
     });
-    
-    doc.save('convidados-confirmados.pdf');
+    docPDF.save('lista_por_familia.pdf');
+  };
+
+  const listaIndividual = useMemo(() => {
+    if (viewMode !== 'individual') return [];
+    const flatList = convidados.flatMap(familia => familia.integrantes.map(integrante => ({ ...integrante, id: `${familia.id}-${integrante.nome}`, nomeFamilia: familia.nomeFamilia })));
+    return flatList.sort((a, b) => a.nome.localeCompare(b.nome));
+  }, [convidados, viewMode]);
+
+  const itemsToPaginate = viewMode === 'familia' ? convidados : listaIndividual;
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentItems = itemsToPaginate.slice(indexOfFirstItem, indexOfLastItem);
+  const totalPages = Math.ceil(itemsToPaginate.length / itemsPerPage);
+
+  const paginate = (pageNumber) => setCurrentPage(pageNumber);
+  const handleItemsPerPageChange = (e) => {
+    setItemsPerPage(Number(e.target.value));
+    setCurrentPage(1);
   };
 
   return (
     <div className="space-y-8">
-      {/* ... (todo o resto do JSX continua exatamente o mesmo) ... */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center"><div className="bg-white p-4 rounded-lg shadow"><p className="text-2xl font-bold">{totalConvidados}</p><p className="text-sm text-gray-500">Convidados Totais</p></div><div className="bg-white p-4 rounded-lg shadow"><p className="text-2xl font-bold">{totalAdultos}</p><p className="text-sm text-gray-500">Adultos</p></div><div className="bg-white p-4 rounded-lg shadow"><p className="text-2xl font-bold">{totalCriancas}</p><p className="text-sm text-gray-500">Crianças</p></div><div className="bg-white p-4 rounded-lg shadow"><p className="text-2xl font-bold text-green-600">{totalConfirmados}</p><p className="text-sm text-gray-500">Confirmados</p></div></div>
       <div className="bg-white p-8 rounded-lg shadow-md"><h2 className="text-2xl font-playfair font-bold mb-6 text-pink-800">Adicionar Família / Convidados</h2><form onSubmit={handleAddFamilia} className="space-y-4"><div className="flex gap-4"><div className="w-2/3"><label htmlFor="nomeFamilia" className="block text-gray-700 font-semibold mb-2">Nome da Família</label><input type="text" id="nomeFamilia" value={nomeFamilia} onChange={(e) => setNomeFamilia(e.target.value)} className="w-full px-4 py-2 border rounded-lg" placeholder="Ex: Família Silva" /></div><div className="w-1/3"><label htmlFor="codigoAcesso" className="block text-gray-700 font-semibold mb-2">Código de Acesso</label><input type="text" id="codigoAcesso" value={codigoAcesso} onChange={(e) => setCodigoAcesso(e.target.value)} className="w-full px-4 py-2 border rounded-lg" placeholder="Ex: SILVA123" /></div></div><div className="flex gap-4"><div className="w-1/2"><label htmlFor="integrantesAdultos" className="block text-gray-700 font-semibold mb-2">Integrantes Adultos (um por linha)</label><textarea id="integrantesAdultos" value={integrantesAdultos} onChange={(e) => setIntegrantesAdultos(e.target.value)} className="w-full px-4 py-2 border rounded-lg" rows="4"></textarea></div><div className="w-1/2"><label htmlFor="integrantesCriancas" className="block text-gray-700 font-semibold mb-2">Integrantes Crianças (um por linha)</label><textarea id="integrantesCriancas" value={integrantesCriancas} onChange={(e) => setIntegrantesCriancas(e.target.value)} className="w-full px-4 py-2 border rounded-lg" rows="4"></textarea></div></div><button type="submit" className="w-full bg-green-500 text-white font-bold py-3 rounded-lg hover:bg-green-600">Adicionar Família</button></form></div>
-      <div className="bg-white p-8 rounded-lg shadow-md"><h2 className="text-2xl font-playfair font-bold mb-6 text-pink-800">Lista de Convidados</h2><div className="overflow-x-auto">{convidados.length === 0 ? <p className="text-center text-gray-500 py-4">Nenhuma família adicionada ainda.</p> : (<table className="min-w-full bg-white"><thead className="bg-gray-50"><tr><th className="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Família / Integrantes</th><th className="py-3 px-6 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Código</th><th className="py-3 px-6 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th></tr></thead><tbody className="divide-y divide-gray-200">{convidados.map((familia) => (<tr key={familia.id}><td className="py-4 px-6 align-top"><p className="font-bold text-lg">{familia.nomeFamilia}</p><ul className="mt-2 space-y-2">{familia.integrantes && familia.integrantes.map((integrante, index) => (<li key={index} className="flex items-center gap-2 text-sm text-gray-600"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${integrante.status === 'Confirmado' ? 'bg-green-100 text-green-800' : integrante.status === 'Recusado' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{integrante.status}</span><span>{integrante.nome} {integrante.tipo && `(${integrante.tipo})`}</span></li>))}</ul></td><td className="py-4 px-6 align-top font-mono text-center">{familia.codigo}</td><td className="py-4 px-6 text-right align-top"><div className="flex justify-end items-start gap-2"><button onClick={() => setFamiliaParaConfirmar(familia)} className="text-green-600 hover:text-green-800" title="Confirmar Presença (Admin)"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></button><button onClick={() => setFamiliaParaEditar(familia)} className="text-blue-600 hover:text-blue-900" title="Editar Família"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"></path><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd"></path></svg></button><button onClick={() => handleDeleteConvidado(familia.id)} className="text-red-600 hover:text-red-900" title="Excluir Família"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd"></path></svg></button></div></td></tr>))}</tbody></table>)}</div>
+      <div className="bg-white p-8 rounded-lg shadow-md">
+        <div className="flex justify-between items-center mb-6"><h2 className="text-2xl font-playfair font-bold text-pink-800">Lista de Convidados</h2><div className="flex gap-2 border border-gray-300 rounded-lg p-1"><button onClick={() => setViewMode('familia')} className={`px-3 py-1 text-sm font-semibold rounded-md ${viewMode === 'familia' ? 'bg-pink-600 text-white' : 'text-gray-600'}`}>Ver por Família</button><button onClick={() => setViewMode('individual')} className={`px-3 py-1 text-sm font-semibold rounded-md ${viewMode === 'individual' ? 'bg-pink-600 text-white' : 'text-gray-600'}`}>Ver Lista Alfabética</button></div></div>
+        {viewMode === 'familia' && (<div className="overflow-x-auto">{convidados.length === 0 ? <p className="text-center text-gray-500 py-4">Nenhuma família adicionada ainda.</p> : (<table className="min-w-full bg-white"><thead className="bg-gray-50"><tr><th className="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Família / Integrantes</th><th className="py-3 px-6 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Código</th><th className="py-3 px-6 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ações</th></tr></thead><tbody className="divide-y divide-gray-200">{currentItems.map((familia) => (<tr key={familia.id}><td className="py-4 px-6 align-top"><p className="font-bold text-lg">{familia.nomeFamilia}</p><ul className="mt-2 space-y-2">{familia.integrantes && familia.integrantes.map((integrante, index) => (<li key={index} className="flex items-center gap-2 text-sm text-gray-600"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${integrante.status === 'Confirmado' ? 'bg-green-100 text-green-800' : integrante.status === 'Recusado' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{integrante.status}</span><span>{integrante.nome} {integrante.tipo && `(${integrante.tipo})`}</span></li>))}</ul></td><td className="py-4 px-6 align-top font-mono text-center">{familia.codigo}</td><td className="py-4 px-6 text-right align-top"><div className="flex justify-end items-start gap-2"><button onClick={() => setFamiliaParaConfirmar(familia)} className="text-green-600 hover:text-green-800" title="Confirmar Presença (Admin)"><svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></button><button onClick={() => setFamiliaParaEditar(familia)} className="text-blue-600 hover:text-blue-900" title="Editar Família"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"></path><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd"></path></svg></button><button onClick={() => handleDeleteConvidado(familia.id)} className="text-red-600 hover:text-red-900" title="Excluir Família"><svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd"></path></svg></button></div></td></tr>))}</tbody></table>)}</div>)}
+        {viewMode === 'individual' && (<div className="overflow-x-auto">{listaIndividual.length === 0 ? <p className="text-center text-gray-500 py-4">Nenhum convidado adicionado ainda.</p> : (<table className="min-w-full bg-white"><thead className="bg-gray-50"><tr><th className="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Convidado</th><th className="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Família</th><th className="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th><th className="py-3 px-6 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th></tr></thead><tbody className="divide-y divide-gray-200">{currentItems.map((integrante) => (<tr key={integrante.id}><td className="py-4 px-6 font-medium">{integrante.nome}</td><td className="py-4 px-6 text-gray-600">{integrante.nomeFamilia}</td><td className="py-4 px-6 text-gray-600">{integrante.tipo}</td><td className="py-4 px-6"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${integrante.status === 'Confirmado' ? 'bg-green-100 text-green-800' : integrante.status === 'Recusado' ? 'bg-red-100 text-red-800' : 'bg-yellow-100 text-yellow-800'}`}>{integrante.status}</span></td></tr>))}</tbody></table>)}</div>)}
+        <div className="flex justify-between items-center mt-6"><div className="flex items-center gap-2"><label htmlFor="itemsPerPage" className="text-sm font-medium text-gray-700">Mostrar por página:</label><select id="itemsPerPage" value={itemsPerPage} onChange={handleItemsPerPageChange} className="border-gray-300 rounded-md shadow-sm text-sm"><option value="5">5</option><option value="10">10</option><option value="15">15</option><option value="20">20</option></select></div>{totalPages > 1 && (<div className="flex justify-center items-center"><button onClick={() => paginate(currentPage - 1)} disabled={currentPage === 1} className="px-3 py-1 mx-1 text-sm text-gray-700 bg-white rounded-md border hover:bg-gray-100 disabled:opacity-50">Anterior</button><span className="px-3 py-1 text-sm">Página {currentPage} de {totalPages}</span><button onClick={() => paginate(currentPage + 1)} disabled={currentPage === totalPages} className="px-3 py-1 mx-1 text-sm text-gray-700 bg-white rounded-md border hover:bg-gray-100 disabled:opacity-50">Próxima</button></div>)}</div>
       </div>
       <div className="bg-white p-8 rounded-lg shadow-md">
         <h2 className="text-2xl font-playfair font-bold mb-6 text-pink-800">Relatórios e Exportação</h2>
         <div className="flex flex-wrap gap-4">
-          <CSVLink data={getExcelData()} filename={"lista-convidados-completa.csv"} className="bg-gray-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-gray-700">Exportar Lista Completa (Excel)</CSVLink>
           <button onClick={handlePdfConfirmados} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Gerar PDF de Confirmados</button>
-          <button onClick={() => alert('Aguardando o layout para implementar!')} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700 disabled:bg-blue-300" disabled>Gerar PDF por Família</button>
+          <button onClick={handlePdfPorFamilia} className="bg-blue-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-blue-700">Gerar PDF por Família</button>
         </div>
       </div>
       {familiaParaEditar && (<EditConvidadoModal familia={familiaParaEditar} onClose={() => setFamiliaParaEditar(null)} onSave={() => { setFamiliaParaEditar(null); fetchConvidados(user.uid); }}/>)}

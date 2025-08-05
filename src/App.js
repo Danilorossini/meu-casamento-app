@@ -1,14 +1,14 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
-// Importando componentes e páginas
 import Home from './pages/Home';
 import Cadastro from './pages/Cadastro';
 import Login from './pages/Login';
+import PublicRSVP from './pages/PublicRSVP';
 import RotaProtegida from './components/RotaProtegida';
-import PublicRSVP from './pages/PublicRSVP'; // 1. Importamos a nova página
+import SiteCasamento from './pages/SiteCasamento';
+import PublicPresentes from './pages/PublicPresentes';
 
-// Importando o layout do painel e as sub-páginas
 import PainelLayout from './pages/PainelLayout';
 import InformacoesGerais from './pages/InformacoesGerais';
 import ListaDePresentes from './pages/ListaDePresentes';
@@ -22,8 +22,10 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/cadastro" element={<Cadastro />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/rsvp" element={<PublicRSVP />} /> {/* 2. Adicionamos a nova rota pública */}
-
+        <Route path="/rsvp" element={<PublicRSVP />} />
+        <Route path="/casamento/:userId" element={<SiteCasamento />} />
+        <Route path="/presentes/:userId" element={<PublicPresentes />} />
+        
         {/* --- ROTA PRIVADA DO PAINEL --- */}
         <Route 
           path="/painel" 
